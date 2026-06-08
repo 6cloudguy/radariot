@@ -88,8 +88,8 @@ This project can be used in various real-world applications, including:
 | ----------- | ----------------------- |
 | VCC         | Breadboard + Rail (5V)  |
 | GND         | Breadboard - Rail (GND) |
-| Trig        | Digital Pin 10          |
-| Echo        | Digital Pin 11          |
+| Trig        | Digital Pin 9         |
+| Echo        | Digital Pin 10          |
 
 ---
 
@@ -99,7 +99,7 @@ This project can be used in various real-world applications, including:
 | ---------------------- | ----------------------- |
 | Red (VCC)              | Breadboard + Rail (5V)  |
 | Black/Brown (GND)      | Breadboard - Rail (GND) |
-| Yellow/Orange (Signal) | Digital Pin 12          |
+| Yellow/Orange (Signal) | Digital Pin 11         |
 
 ---
 
