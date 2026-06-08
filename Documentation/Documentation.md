@@ -1,7 +1,7 @@
 # RADAR SYSTEM USING ARDUINO UNO
 
 <p align="center">
-  <img src="81DM0ufBhCL1.jpg" alt="Radar System Project" width="500">
+  <img src="1.jpg" alt="Radar System Project" width="500">
 </p>
 
 ## Components Used
@@ -68,7 +68,7 @@ This project can be used in various real-world applications, including:
 
 ## Connection Diagram
 <p align="center">
-  <img src="c63a6f81-a391-43ca-85ad-301f509ae1a41.png" alt="Radar System Project" width="500">
+  <img src="2.png" alt="Radar System Project" width="500">
 </p>
 
 
@@ -142,7 +142,7 @@ This project can be used in various real-world applications, including:
 
 
 <p align="center">
-  <img src="Screenshot 2026-06-07 1149081.png" alt="Wokwi Circuit Diagram" width="600">
+  <img src="3.png" alt="Wokwi Circuit Diagram" width="600">
 </p>
 
 
