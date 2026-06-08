@@ -4,8 +4,8 @@ import time
 import math
 
 # ========================= CONFIG =========================
-SERIAL_PORT = "COM3"          # ← CHANGE THIS (Windows: COM3, Linux: /dev/ttyUSB0)
-BAUD_RATE = 115200
+SERIAL_PORT = "/dev/ttyACM1"          # ← CHANGE THIS (Windows: COM3, Linux: /dev/ttyUSB0)
+BAUD_RATE = 9600
 
 WIDTH, HEIGHT = 800, 600
 CENTER = (WIDTH//2, HEIGHT//2)
