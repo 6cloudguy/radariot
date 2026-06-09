@@ -7,13 +7,13 @@ import sys
 
 # ========================= CONFIG =========================
 SERIAL_PORT   = None      # Set to "COM3" / "/dev/ttyACM0" to skip auto-detect
-BAUD_RATE     = 9600
+BAUD_RATE     = 115200
 
 WIDTH, HEIGHT = 900, 680
 # Arc opens upward → center sits near the bottom
 RADAR_CENTER  = (WIDTH // 2, HEIGHT - 60)
 RADAR_RADIUS  = 530
-MAX_DISTANCE  = 150       # cm — must match Arduino DETECTION_THRESHOLD
+MAX_DISTANCE  = 30       # cm — must match Arduino DETECTION_THRESHOLD
 FADE_SECONDS  = 4         # how long a trail segment stays visible
 
 # ──────────────────────────────────────────────────────────
