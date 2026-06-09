@@ -48,7 +48,7 @@ font_sm = pygame.font.SysFont("consolas", 14)
 font_md = pygame.font.SysFont("consolas", 18)
 font_lg = pygame.font.SysFont("consolas", 22, bold=True)
 
-# Transparent surface for alpha fading/glowing effects
+# Transparent surface for rich alpha fading/glowing effects
 overlay_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
 
 port = find_serial_port()
@@ -107,7 +107,7 @@ def draw_radar_bg():
         dy = ey - RADAR_CENTER[1]
         norm = math.hypot(dx, dy) or 1
         screen.blit(lbl, (ex + int(dx / norm * 12) - 10,
-                           ey + int(dy / norm * 12) - 8))
+                          ey + int(dy / norm * 12) - 8))
 
     # Grid Base line 
     pygame.draw.line(screen, (0, 90, 25),
@@ -117,66 +117,78 @@ def draw_radar_bg():
 
 def draw_sweep_line(angle):
     """
-    Renders an alpha trailing fan, a high-contrast sweep head, 
-    and persistent blips that smoothly fade over time.
+    Renders thick polygon sweeps for an authoritative radar trail, 
+    persistent blips that smoothly fade, and an intense active sweep head.
     """
     overlay_surface.fill((0, 0, 0, 0)) # Clear previous frame alpha
     now = time.time()
 
-    # ── 1. Draw Trailing Sweep Fan (Last 30 degrees) ──────────
-    for offset in range(30, 0, -1):
-        a = (angle - offset) % 360
-        if not (0 <= a <= 180): 
+    # ── 1. Draw Trailing Sweep Fan using thick overlapping polygon slices ──
+    trail_width_deg = 30
+    for offset in range(trail_width_deg, 0, -1):
+        a1 = (angle - offset) % 360
+        a2 = (angle - (offset - 1)) % 360
+        
+        if not (0 <= a1 <= 180) or not (0 <= a2 <= 180): 
             continue
             
-        alpha = int(100 * (1 - offset / 30)) # Tail drop-off
-        tx, ty = angle_tip(a)
+        alpha = int(140 * (1 - offset / trail_width_deg)) 
         
-        fade_d, _ = objects.get(a, (None, None))
-        if fade_d is not None and 2 < fade_d < MAX_DISTANCE:
-            ox, oy = polar_to_xy(a, fade_d)
-            # Center to obstacle: Warning Amber/Red Trail
-            pygame.draw.line(overlay_surface, (130, 40, 0, alpha), RADAR_CENTER, (ox, oy), 2)
-            # Obstacle to outer rim: Soft Green Trail
-            pygame.draw.line(overlay_surface, (0, 100, 30, alpha), (ox, oy), (tx, ty), 1)
+        tx1, ty1 = angle_tip(a1)
+        tx2, ty2 = angle_tip(a2)
+        
+        fade_d1, _ = objects.get(a1, (None, None))
+        fade_d2, _ = objects.get(a2, (None, None))
+        
+        # Scenario A: Blocked Path Trail Segment
+        if fade_d1 is not None and 2 < fade_d1 < MAX_DISTANCE:
+            ox1, oy1 = polar_to_xy(a1, fade_d1)
+            ox2, oy2 = polar_to_xy(a2, fade_d2 if (fade_d2 and 2 < fade_d2 < MAX_DISTANCE) else fade_d1)
+            
+            # Red obstacle wedge (Center to Object)
+            pygame.draw.polygon(overlay_surface, (160, 30, 0, alpha), [RADAR_CENTER, (ox1, oy1), (ox2, oy2)])
+            # Green clear wedge beyond obstacle (Object to Rim)
+            pygame.draw.polygon(overlay_surface, (0, 90, 25, alpha), [(ox1, oy1), (tx1, ty1), (tx2, ty2), (ox2, oy2)])
         else:
-            # Full clear sweep lane
-            pygame.draw.line(overlay_surface, (0, 110, 35, alpha), RADAR_CENTER, (tx, ty), 2)
+            # Scenario B: Fully Clear Trail Segment
+            pygame.draw.polygon(overlay_surface, (0, 110, 30, alpha), [RADAR_CENTER, (tx1, ty1), (tx2, ty2)])
 
-    # ── 2. Draw Fading Obstacle Blips ─────────────────────────
+    # ── 2. Draw Highly Visible Fading Obstacle Blips ─────────────────────────
     for ang, (dist_cm, timestamp) in list(objects.items()):
         age = now - timestamp
         if age > FADE_SECONDS or dist_cm >= MAX_DISTANCE or dist_cm <= 2:
             continue
             
-        # Calculate fade out alpha multiplier
         alpha_factor = 1.0 - (age / FADE_SECONDS)
         blip_alpha = int(255 * alpha_factor)
         
         bx, by = polar_to_xy(ang, dist_cm)
         
-        # Outer Ring Glow, Inner hot-spot core
-        pygame.draw.circle(overlay_surface, (255, 30, 60, int(blip_alpha * 0.4)), (bx, by), 7)
-        pygame.draw.circle(overlay_surface, (255, 200, 210, blip_alpha), (bx, by), 3)
+        # Multi-layered glowing blips
+        pygame.draw.circle(overlay_surface, (255, 30, 60, int(blip_alpha * 0.3)), (bx, by), 12)
+        pygame.draw.circle(overlay_surface, (255, 40, 60, int(blip_alpha * 0.7)), (bx, by), 7)
+        pygame.draw.circle(overlay_surface, (255, 220, 220, blip_alpha), (bx, by), 3)
 
-    # Blit the accumulated alpha changes over the main background
+    # Apply alpha surface over background
     screen.blit(overlay_surface, (0, 0))
 
-    # ── 3. Bright Active Sweep Head (Drawn on top) ─────────────
+    # ── 3. High-Contrast Active Sweep Head (Thick, Vivid Lines) ────────────────
     dist_at_angle, _ = objects.get(angle, (None, None))
     tx, ty = angle_tip(angle)
 
     if dist_at_angle is not None and 2 < dist_at_angle < MAX_DISTANCE:
         ox, oy = polar_to_xy(angle, dist_at_angle)
-        # Visual fix: CENTER to OBJECT is blocked (RED/ORANGE). OBJECT to RIM is clear (GREEN).
-        pygame.draw.line(screen, (255, 65, 65), RADAR_CENTER, (ox, oy), 3)   # Obstacle Segment
-        pygame.draw.line(screen, (50, 255, 110), (ox, oy), (tx, ty), 2)     # Clear Beyond Segment
         
-        # Primary threat marker blip
-        pygame.draw.circle(screen, (255, 255, 255), (ox, oy), 4)
+        # Red/Orange Threat Indicator line (4px thick)
+        pygame.draw.line(screen, (255, 50, 50), RADAR_CENTER, (ox, oy), 4)
+        # Clear Green Beyond line
+        pygame.draw.line(screen, (40, 255, 100), (ox, oy), (tx, ty), 3)
+        
+        # Neon Hot Core Blip tracking point
+        pygame.draw.circle(screen, (255, 255, 255), (ox, oy), 5)
     else:
-        # 100% Clear line
-        pygame.draw.line(screen, (60, 255, 120), RADAR_CENTER, (tx, ty), 3)
+        # 100% Solid Clear line
+        pygame.draw.line(screen, (40, 255, 100), RADAR_CENTER, (tx, ty), 4)
         
 
 def draw_hud():
@@ -185,7 +197,6 @@ def draw_hud():
     # Glowing Alert system banner
     if now < alert_until:
         flash_surf = font_lg.render("⚠  APPROACHING OBJECT DETECTED  ⚠", True, (255, 50, 50))
-        # Simulated glow box backing
         pygame.draw.rect(screen, (40, 5, 5), (WIDTH//2 - 260, 4, 520, 32), border_radius=4)
         pygame.draw.rect(screen, (150, 20, 20), (WIDTH//2 - 260, 4, 520, 32), 1, border_radius=4)
         screen.blit(flash_surf, (WIDTH // 2 - flash_surf.get_width() // 2, 9))
@@ -211,7 +222,7 @@ def draw_hud():
     pygame.draw.line(screen, (255, 65, 65),  (leg_x, HEIGHT - 41), (leg_x + 25, HEIGHT - 41), 3)
     screen.blit(font_sm.render("OBSTACLE", True, (240, 90, 90)), (leg_x + 35, HEIGHT - 47))
     
-    pygame.draw.line(screen, (60, 255, 120),  (leg_x, HEIGHT - 21), (leg_x + 25, HEIGHT - 21), 3)
+    pygame.draw.line(screen, (40, 255, 100),  (leg_x, HEIGHT - 21), (leg_x + 25, HEIGHT - 21), 3)
     screen.blit(font_sm.render("CLEAR",    True, (110, 230, 140)), (leg_x + 35, HEIGHT - 27))
 
 
@@ -239,8 +250,15 @@ while running:
                 dist  = float(parts[2])
                 sweep_angle = angle
                 status_msg  = "Tracking Sector Sweep..."
+                
+                # --- FIXED HERE ---
+                # If the distance is valid, register it.
+                # If the distance shows nothing is there, clear it from the database immediately.
                 if 2 < dist < MAX_DISTANCE:
                     objects[angle] = (dist, time.time())
+                else:
+                    if angle in objects:
+                        del objects[angle]
 
             elif parts[0] == "T" and len(parts) >= 4:
                 angle  = int(parts[1])
