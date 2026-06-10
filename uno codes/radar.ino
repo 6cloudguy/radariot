@@ -1,9 +1,9 @@
 // ═══════════════════════════════════════════════════════════════
 //  Ultrasonic Radar — Arduino sketch
-//  Serial protocol (9600 baud):
-//    S,<angle>,<dist_cm>        per-angle sweep reading
-//    T,<angle>,<prev_cm>,<now_cm>  tracking update per object
-//    A                          approaching alert (buzzer fired)
+//  Serial protocol (115200 baud):
+//    S,<angle>,<dist_cm>              per-angle sweep reading
+//    T,<angle>,<prev_cm>,<now_cm>     tracking update per object
+//    A                                approaching alert (buzzer fired)
 // ═══════════════════════════════════════════════════════════════
 #include <Servo.h>
 
@@ -16,11 +16,10 @@ const uint8_t buzzerPin = 12;
 // ── Tuning constants ─────────────────────────────────────────
 const uint8_t  SWEEP_START         = 0;
 const uint8_t  SWEEP_END           = 180;
-const uint8_t  STEP_DELAY          = 100;   // ms per degree step
-const uint8_t  ANGLE_STEP          = 2;    // degrees (1 = smoother, slower)
-const uint16_t DETECTION_THRESHOLD = 150;  // cm — must match Python MAX_DISTANCE
+const uint8_t  STEP_DELAY          = 80;    // ms per step — HC-SR04 needs ~10ms settle; 40ms is solid
+const uint8_t  ANGLE_STEP          = 1;
+const uint16_t DETECTION_THRESHOLD = 150;   // cm — must match Python MAX_DISTANCE
 const uint8_t  NUM_READINGS        = 6;
-const uint16_t BEEP_DURATION       = 1500;
 const uint16_t TRACKING_TIME_MS    = 800;
 const uint8_t  MAX_ANGLE_GAP       = 5;
 const uint8_t  MAX_DIST_DIFF       = 15;
@@ -55,9 +54,11 @@ uint16_t getDistance() {
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
-  unsigned long duration = pulseIn(echoPin, HIGH, 4500UL);
-  if (duration == 0) return 0;                 // no echo → out-of-range
-  return (uint16_t)((duration * 17UL / 1000));  // microseconds → cm
+  unsigned long duration = pulseIn(echoPin, HIGH, 5400UL);
+  if (duration == 0) return 0;
+  // speed of sound ~343 m/s = 0.0343 cm/µs
+  // distance = duration * 0.0343 / 2  →  duration * 343 / 20000
+  return (uint16_t)(duration * 343UL / 20000UL);
 }
 
 void finalizeCluster() {
@@ -84,19 +85,16 @@ void sweepAndDetect() {
     uint16_t dist = getDistance();
     bool valid = (dist > 2 && dist < DETECTION_THRESHOLD);
 
-    // ── Emit sweep CSV line ──────────────────────────────────
-    // Always send so Python can animate the sweep line
     Serial.print(F("S,"));
     Serial.print(angle);
     Serial.print(F(","));
-    Serial.println(valid ? dist : 0);   // 0 = nothing detected at this angle
+    Serial.println(valid ? dist : 0);
 
-    // ── Cluster bookkeeping ──────────────────────────────────
     if (valid) {
       bool angleBreak = cluster.active && (angle - cluster.lastAngle > MAX_ANGLE_GAP);
       bool distBreak  = cluster.active &&
-                        ((int16_t)dist - (int16_t)cluster.lastDist > MAX_DIST_DIFF ||
-                         (int16_t)cluster.lastDist - (int16_t)dist > MAX_DIST_DIFF);
+                        (dist > cluster.lastDist + MAX_DIST_DIFF ||
+                         cluster.lastDist > dist + MAX_DIST_DIFF);
 
       if (angleBreak || distBreak) finalizeCluster();
 
@@ -120,32 +118,28 @@ void sweepAndDetect() {
 void trackObjects() {
   if (objectCount == 0) return;
 
-  unsigned long trackStart = millis();
+  uint32_t trackStart = millis();
 
   for (uint8_t i = 0; i < objectCount; i++) {
     if (millis() - trackStart > 8000UL) break;
 
-    uint8_t  ang      = (objects[i].spanStart + objects[i].spanEnd) / 2;
-    uint16_t prevDist = objects[i].avgDistance;
+    uint8_t  ang         = (objects[i].spanStart + objects[i].spanEnd) / 2;
+    uint16_t prevDist    = objects[i].avgDistance;
+    uint16_t currentDist = prevDist;
 
     myServo.write(ang);
     delay(300);
 
+    // ── Initial averaged reading ────────────────────────────
     uint32_t total     = 0;
     uint8_t  validReads = 0;
-
     for (uint8_t r = 0; r < NUM_READINGS; r++) {
       uint16_t d = getDistance();
-      if (d > 2 && d < DETECTION_THRESHOLD) {
-        total += d;
-        validReads++;
-      }
+      if (d > 2 && d < DETECTION_THRESHOLD) { total += d; validReads++; }
       delay(TRACKING_TIME_MS / NUM_READINGS);
     }
+    if (validReads > 0) currentDist = (uint16_t)(total / validReads);
 
-    uint16_t currentDist = (validReads > 0) ? (uint16_t)(total / validReads) : prevDist;
-
-    // ── Emit tracking CSV line ───────────────────────────────
     Serial.print(F("T,"));
     Serial.print(ang);
     Serial.print(F(","));
@@ -153,14 +147,15 @@ void trackObjects() {
     Serial.print(F(","));
     Serial.println(currentDist);
 
-    if (currentDist < prevDist) {   // object approaching  // Stare at this object until it stops approaching or leaves range
+    // ── Stare loop: hold on this object while it's approaching ──
+    if (currentDist + 5 < prevDist) {
       while (true) {
         Serial.println(F("A"));
-        tone(buzzerPin, 1000, 300);      // short repeating beep
+        tone(buzzerPin, 1000, 250);   // short repeating beep
         delay(400);
 
-        uint16_t d = getDistance();
-        bool inRange = (d > 2 && d < DETECTION_THRESHOLD);
+        uint16_t d    = getDistance();
+        bool inRange  = (d > 2 && d < DETECTION_THRESHOLD);
 
         Serial.print(F("T,"));
         Serial.print(ang);
@@ -169,16 +164,18 @@ void trackObjects() {
         Serial.print(F(","));
         Serial.println(inRange ? d : 0);
 
-        if (!inRange || d >= currentDist - 5) break;  // stopped or moved away
+        // Break when object stops closing in (within 5 cm tolerance) or leaves range
+        if (!inRange || d >= currentDist - 5) break;
+
         currentDist = d;
       }
       noTone(buzzerPin);
-      // fall through — continue to next object in the loop
-    }
-    prevDist = currentDist;
-  }
 
-  objectCount = 0;
+      // Update stored distance so the next sweep starts from fresh baseline
+      objects[i].avgDistance = currentDist;
+    }
+    // Fall through to next object naturally
+  }
 }
 
 // ── Arduino entry points ──────────────────────────────────────
@@ -186,8 +183,9 @@ void setup() {
   pinMode(trigPin,   OUTPUT);
   pinMode(echoPin,   INPUT);
   pinMode(buzzerPin, OUTPUT);
+  noTone(buzzerPin);    // ensure silent on boot
   myServo.attach(servoPin);
-  Serial.begin(9600);
+  Serial.begin(115200);
   myServo.write(90);
   delay(500);
 }
