@@ -13,8 +13,8 @@ WIDTH, HEIGHT = 900, 680
 # Arc opens upward → center sits near the bottom
 RADAR_CENTER  = (WIDTH // 2, HEIGHT - 60)
 RADAR_RADIUS  = 530
-MAX_DISTANCE  = 30       # cm — must match Arduino DETECTION_THRESHOLD
-FADE_SECONDS  = 4         # how long a trail segment stays visible
+MAX_DISTANCE  = 36       # cm — must match Arduino DETECTION_THRESHOLD
+FADE_SECONDS  = 15         # how long a trail segment stays visible
 
 # ──────────────────────────────────────────────────────────
 def find_serial_port():
@@ -156,11 +156,11 @@ def draw_sweep_line(angle):
     # ── 2. Draw Highly Visible Fading Obstacle Blips ─────────────────────────
     for ang, (dist_cm, timestamp) in list(objects.items()):
         age = now - timestamp
-        if age > FADE_SECONDS or dist_cm >= MAX_DISTANCE or dist_cm <= 2:
+        if age > FADE_SECONDS:
+            del objects[ang]
             continue
-            
-        alpha_factor = 1.0 - (age / FADE_SECONDS)
-        blip_alpha = int(255 * alpha_factor)
+
+        blip_alpha = 255
         
         bx, by = polar_to_xy(ang, dist_cm)
         
@@ -209,7 +209,7 @@ def draw_hud():
     pygame.draw.line(screen, (0, 80, 30), (0, HEIGHT - 60), (WIDTH, HEIGHT - 60), 1)
 
     info = font_md.render(
-        f"Active Pins: {len(objects)}   Max Range: {MAX_DISTANCE}cm   "
+        f"Objects: {len(objects)}   Max Range: {MAX_DISTANCE}cm   "
         f"Bearing: {sweep_angle:03d}°   Port: {port}",
         True, (0, 200, 75))
     screen.blit(info, (15, HEIGHT - 28))
@@ -256,17 +256,22 @@ while running:
                 # If the distance shows nothing is there, clear it from the database immediately.
                 if 2 < dist < MAX_DISTANCE:
                     objects[angle] = (dist, time.time())
-                else:
-                    if angle in objects:
-                        del objects[angle]
 
             elif parts[0] == "T" and len(parts) >= 4:
                 angle  = int(parts[1])
                 prev_d = float(parts[2])
                 curr_d = float(parts[3])
-                status_msg = f"Intercept vector {angle}°: {curr_d:.0f}cm"
-                if curr_d < prev_d - 5:
-                    print(f"⚠  Approaching at {angle}°: {prev_d}→{curr_d} cm")
+
+                sweep_angle = angle  # show radar beam locked on target
+
+                status_msg = f"Tracking target {angle}° : {curr_d:.0f}cm"
+
+                # Update tracked object position on radar
+                if 2 < curr_d < MAX_DISTANCE:
+                    objects[angle] = (curr_d, time.time()-14)
+
+                if curr_d < prev_d - 0.5:
+                    print(f"⚠ Approaching at {angle}°: {prev_d}→{curr_d} cm")
                     alert_until = time.time() + 3
 
             elif line == "A":
